@@ -19,17 +19,24 @@ red()    { echo -e "\033[31m$1\033[0m"; }
 install_jupyter() {
   cd ~ || cd /tmp
   green "📦 更新包列表并安装依赖..."
-  apt update
-  apt install -y python3-pip curl
-  green "📥 升级 pip 并安装 Jupyter..."
-  pip3 install --upgrade pip
-  pip3 install jupyter notebook
+  if command -v apt &> /dev/null; then
+    apt update
+    apt install -y python3-pip curl
+  elif command -v yum &> /dev/null; then
+    yum install -y python3-pip curl
+  else
+    red "❌ 不支持的 Linux 发行版"
+    return_to_menu
+    return
+  fi
 
-  # 创建配置目录和文件
+  green "📥 升级 pip 并安装 Jupyter..."
+  python3 -m pip install --upgrade pip
+  python3 -m pip install jupyter notebook
+
   mkdir -p "$jupyter_config_dir"
   jupyter notebook --generate-config --allow-root
 
-  # 修改配置文件
   cat > "$jupyter_config_file" << EOF
 c = get_config()
 c.NotebookApp.allow_root = True
@@ -43,41 +50,43 @@ EOF
   yellow "提示：请先设置登录密码再启动服务"
   return_to_menu
 }
+
 # 设置登录密码
 set_password() {
-  # 检查 Jupyter Notebook 是否安装
   if ! command -v jupyter &> /dev/null; then
     red "❌ Jupyter 未安装，请先安装"
     return_to_menu
     return
   fi
 
-  # 直接使用python生成密码散列
+  if ! python3 -c "import notebook.auth" &>/dev/null; then
+    red "❌ notebook.auth 模块不存在，请尝试运行：pip3 install notebook"
+    return_to_menu
+    return
+  fi
+
   read -s -p "请输入新密码: " password
   echo
   read -s -p "请确认新密码: " password2
   echo
-  
+
   if [[ "$password" != "$password2" ]]; then
     red "❌ 两次密码不匹配"
     return_to_menu
     return
   fi
 
-  # 使用Python生成密码散列
   hash=$(python3 -c "from notebook.auth import passwd; print(passwd('$password'))" 2>/dev/null)
 
-  # 检查是否成功生成哈希
-  if [[ $? -ne 0 ]]; then
-    red "❌ 未找到 notebook.auth 模块，请确认 Jupyter Notebook 是否安装。"
+  if [[ $? -ne 0 || -z "$hash" ]]; then
+    red "❌ 密码哈希生成失败，请确认 notebook 模块是否正确安装"
     return_to_menu
     return
   fi
 
-  # 更新配置文件
   sed -i "/c.NotebookApp.password/d" "$jupyter_config_file"
   echo "c.NotebookApp.password = '$hash'" >> "$jupyter_config_file"
-  
+
   green "✅ 密码设置完成"
   return_to_menu
 }
@@ -110,7 +119,7 @@ start_jupyter() {
 
   read -p "🌐 请输入端口（默认: $default_port）: " port
   port=${port:-$default_port}
-  
+
   if netstat -tuln | grep -q ":$port "; then
     red "❌ 端口 $port 已被占用"
     return_to_menu
@@ -119,15 +128,17 @@ start_jupyter() {
 
   cd "$HOME"
   jupyter notebook --allow-root --no-browser --ip=0.0.0.0 --port=$port > jupyter.log 2>&1 &
-  
+
   sleep 3
   if pgrep -f "jupyter-notebook" > /dev/null; then
     server_ip=$(curl -s ifconfig.me || hostname -I | awk '{print $1}')
     token=$(grep -oP "token=\K[a-z0-9]+" jupyter.log | head -n 1)
+    if [[ -z "$token" ]]; then
+      token=$(grep -o "token=[a-z0-9]\+" jupyter.log | head -n 1 | cut -d= -f2)
+    fi
     green "🚀 Jupyter 已启动：端口 $port"
     if [[ -n "$token" ]]; then
       yellow "访问地址: http://$server_ip:$port/?token=$token"
-      yellow "首次访问请使用上述带token的完整URL"
     else
       yellow "访问地址: http://$server_ip:$port"
     fi
@@ -172,6 +183,16 @@ uninstall_jupyter() {
   return_to_menu
 }
 
+# 查看日志
+view_log() {
+  if [[ -f "$HOME/jupyter.log" ]]; then
+    less "$HOME/jupyter.log"
+  else
+    red "❌ 未找到日志文件"
+  fi
+  return_to_menu
+}
+
 # 返回主菜单
 return_to_menu() {
   echo
@@ -189,9 +210,10 @@ main_menu() {
   echo "4) 启动 Jupyter 服务"
   echo "5) 停止 Jupyter 服务"
   echo "6) 卸载 Jupyter"
+  echo "7) 查看运行日志"
   echo "0) 退出"
   echo "============================"
-  read -p "请选择 [0-6]: " choice
+  read -p "请选择 [0-7]: " choice
   case "$choice" in
     1) install_jupyter ;;
     2) set_password ;;
@@ -199,6 +221,7 @@ main_menu() {
     4) start_jupyter ;;
     5) stop_jupyter ;;
     6) uninstall_jupyter ;;
+    7) view_log ;;
     0) exit 0 ;;
     *) red "无效选项" && return_to_menu ;;
   esac
