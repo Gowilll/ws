@@ -46,6 +46,13 @@ EOF
 
 # 设置登录密码
 set_password() {
+  # 检查 Jupyter Notebook 是否安装
+  if ! command -v jupyter &> /dev/null; then
+    red "❌ Jupyter 未安装，请先安装"
+    return_to_menu
+    return
+  fi
+
   # 直接使用python生成密码散列
   read -s -p "请输入新密码: " password
   echo
@@ -59,8 +66,19 @@ set_password() {
   fi
 
   # 使用Python生成密码散列
-  hash=$(python3 -c "from notebook.auth import passwd; print(passwd('$password'))")
-  
+  hash=$(python3 -c "try:
+    from notebook.auth import passwd
+    print(passwd('$password'))
+  except ModuleNotFoundError:
+    print('❌ 未找到 notebook.auth 模块，请确认 Jupyter Notebook 是否安装。')")
+
+  # 检查是否成功生成哈希
+  if [[ "$hash" == "❌"* ]]; then
+    red "$hash"
+    return_to_menu
+    return
+  fi
+
   # 更新配置文件
   sed -i "/c.NotebookApp.password/d" "$jupyter_config_file"
   echo "c.NotebookApp.password = '$hash'" >> "$jupyter_config_file"
@@ -82,14 +100,12 @@ show_password() {
 
 # 启动 Jupyter Notebook
 start_jupyter() {
-  # 检查是否已安装
   if ! command -v jupyter &> /dev/null; then
     red "❌ Jupyter 未安装，请先安装"
     return_to_menu
     return
   fi
 
-  # 检查服务是否已经在运行
   if pgrep -f "jupyter-notebook" > /dev/null; then
     yellow "⚠️ Jupyter 已在运行中"
     ps aux | grep "jupyter-notebook" | grep -v grep
@@ -100,18 +116,15 @@ start_jupyter() {
   read -p "🌐 请输入端口（默认: $default_port）: " port
   port=${port:-$default_port}
   
-  # 检查端口是否被占用
   if netstat -tuln | grep -q ":$port "; then
     red "❌ 端口 $port 已被占用"
     return_to_menu
     return
   fi
 
-  # 启动服务
   cd "$HOME"
   jupyter notebook --allow-root --no-browser --ip=0.0.0.0 --port=$port > jupyter.log 2>&1 &
   
-  # 等待服务启动并检查
   sleep 3
   if pgrep -f "jupyter-notebook" > /dev/null; then
     server_ip=$(curl -s ifconfig.me || hostname -I | awk '{print $1}')
