@@ -9,30 +9,37 @@
 default_port=8888
 jupyter_config_dir="$HOME/.jupyter"
 jupyter_config_file="$jupyter_config_dir/jupyter_notebook_config.py"
+jupyter_log_file="$HOME/jupyter.log"
 
 # 颜色输出
 green()  { echo -e "\033[32m$1\033[0m"; }
 yellow() { echo -e "\033[33m$1\033[0m"; }
 red()    { echo -e "\033[31m$1\033[0m"; }
 
+# 检查并安装 notebook 模块
+ensure_notebook_installed() {
+  if ! python3 -c "from notebook.auth import passwd" 2>/dev/null; then
+    yellow "⚠️ notebook.auth 模块不存在，正在尝试安装 notebook 包..."
+    python3 -m pip install --upgrade pip
+    python3 -m pip install notebook
+    if ! python3 -c "from notebook.auth import passwd" 2>/dev/null; then
+      red "❌ notebook 模块仍然无法使用，请手动检查 Python 环境"
+      return 1
+    fi
+  fi
+  return 0
+}
+
 # 安装 Jupyter Notebook
 install_jupyter() {
   cd ~ || cd /tmp
   green "📦 更新包列表并安装依赖..."
-  if command -v apt &> /dev/null; then
-    apt update
-    apt install -y python3-pip curl
-  elif command -v yum &> /dev/null; then
-    yum install -y python3-pip curl
-  else
-    red "❌ 不支持的 Linux 发行版"
-    return_to_menu
-    return
-  fi
+  apt update
+  apt install -y python3-pip curl net-tools
 
-  green "📥 升级 pip 并安装 Jupyter..."
-  python3 -m pip install --upgrade pip
-  python3 -m pip install jupyter notebook
+  green "📥 安装 Jupyter..."
+  pip3 install --upgrade pip
+  pip3 install notebook
 
   mkdir -p "$jupyter_config_dir"
   jupyter notebook --generate-config --allow-root
@@ -59,11 +66,7 @@ set_password() {
     return
   fi
 
-  if ! python3 -c "import notebook.auth" &>/dev/null; then
-    red "❌ notebook.auth 模块不存在，请尝试运行：pip3 install notebook"
-    return_to_menu
-    return
-  fi
+  ensure_notebook_installed || return_to_menu
 
   read -s -p "请输入新密码: " password
   echo
@@ -76,13 +79,7 @@ set_password() {
     return
   fi
 
-  hash=$(python3 -c "from notebook.auth import passwd; print(passwd('$password'))" 2>/dev/null)
-
-  if [[ $? -ne 0 || -z "$hash" ]]; then
-    red "❌ 密码哈希生成失败，请确认 notebook 模块是否正确安装"
-    return_to_menu
-    return
-  fi
+  hash=$(python3 -c "from notebook.auth import passwd; print(passwd('$password'))")
 
   sed -i "/c.NotebookApp.password/d" "$jupyter_config_file"
   echo "c.NotebookApp.password = '$hash'" >> "$jupyter_config_file"
@@ -127,25 +124,22 @@ start_jupyter() {
   fi
 
   cd "$HOME"
-  jupyter notebook --allow-root --no-browser --ip=0.0.0.0 --port=$port > jupyter.log 2>&1 &
+  nohup jupyter notebook --allow-root --no-browser --ip=0.0.0.0 --port=$port > "$jupyter_log_file" 2>&1 &
 
   sleep 3
   if pgrep -f "jupyter-notebook" > /dev/null; then
     server_ip=$(curl -s ifconfig.me || hostname -I | awk '{print $1}')
-    token=$(grep -oP "token=\K[a-z0-9]+" jupyter.log | head -n 1)
-    if [[ -z "$token" ]]; then
-      token=$(grep -o "token=[a-z0-9]\+" jupyter.log | head -n 1 | cut -d= -f2)
-    fi
+    token=$(grep -oP "token=\K[a-z0-9]+" "$jupyter_log_file" | head -n 1)
     green "🚀 Jupyter 已启动：端口 $port"
     if [[ -n "$token" ]]; then
       yellow "访问地址: http://$server_ip:$port/?token=$token"
     else
       yellow "访问地址: http://$server_ip:$port"
     fi
-    yellow "运行日志: $HOME/jupyter.log"
+    yellow "运行日志: $jupyter_log_file"
   else
     red "❌ Jupyter 启动失败，错误信息："
-    cat jupyter.log
+    cat "$jupyter_log_file"
   fi
   return_to_menu
 }
@@ -158,8 +152,7 @@ stop_jupyter() {
     if ! pgrep -f "jupyter-notebook" > /dev/null; then
       green "🛑 Jupyter 服务已停止"
     else
-      red "❌ Jupyter 停止失败"
-      yellow "尝试强制停止..."
+      red "❌ 停止失败，尝试强制终止..."
       pkill -9 -f "jupyter-notebook"
     fi
   else
@@ -173,10 +166,10 @@ uninstall_jupyter() {
   read -p "⚠️ 确认卸载 Jupyter？此操作将删除所有配置！输入 yes 确认: " confirm
   if [[ $confirm == "yes" ]]; then
     stop_jupyter
-    pip3 uninstall -y jupyter notebook
+    pip3 uninstall -y notebook jupyter
     rm -rf "$jupyter_config_dir"
-    rm -f "$HOME/jupyter.log"
-    green "🗑️ 已卸载 Jupyter 及所有配置"
+    rm -f "$jupyter_log_file"
+    green "🗑️ 已卸载 Jupyter 及配置"
   else
     yellow "取消操作"
   fi
@@ -185,15 +178,16 @@ uninstall_jupyter() {
 
 # 查看日志
 view_log() {
-  if [[ -f "$HOME/jupyter.log" ]]; then
-    less "$HOME/jupyter.log"
+  if [[ -f "$jupyter_log_file" ]]; then
+    yellow "最近20行运行日志："
+    tail -n 20 "$jupyter_log_file"
   else
     red "❌ 未找到日志文件"
   fi
   return_to_menu
 }
 
-# 返回主菜单
+# 返回菜单
 return_to_menu() {
   echo
   read -p "按 Enter 返回菜单..." _unused
