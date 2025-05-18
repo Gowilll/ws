@@ -45,3 +45,6 @@ git clone --depth 1 https://github.com/用户名/仓库名.git
 或者使用curl或wget命令：
 
 curl -O https://raw.githubusercontent.com/用户名/仓库名/分支名/路径/文件名
+
+
+首先，完成脚本的剩余部分，从我提供的最后一行代码继续：
