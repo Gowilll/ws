@@ -9,7 +9,6 @@
 default_port=8888
 jupyter_config_dir="$HOME/.jupyter"
 jupyter_config_file="$jupyter_config_dir/jupyter_notebook_config.py"
-jupyter_password_file="$jupyter_config_dir/jupyter_server_config.json"
 
 # 颜色输出
 green()  { echo -e "\033[32m$1\033[0m"; }
@@ -26,23 +25,19 @@ install_jupyter() {
   pip3 install --upgrade pip
   pip3 install jupyter notebook
 
-  # 自动生成配置文件
+  # 创建配置目录和文件
   mkdir -p "$jupyter_config_dir"
-  if [[ ! -f "$jupyter_config_file" ]]; then
-    jupyter notebook --generate-config
-    
-    # 添加基础配置
-    cat >> "$jupyter_config_file" << EOF
+  jupyter notebook --generate-config --allow-root
 
-# 设置允许远程访问
-c.NotebookApp.allow_remote_access = True
+  # 修改配置文件
+  cat > "$jupyter_config_file" << EOF
+c = get_config()
+c.NotebookApp.allow_root = True
 c.NotebookApp.ip = '0.0.0.0'
-# 禁用自动打开浏览器
 c.NotebookApp.open_browser = False
-# 设置工作目录
 c.NotebookApp.notebook_dir = '$HOME'
+c.NotebookApp.allow_remote_access = True
 EOF
-  fi
 
   green "✅ Jupyter Notebook 安装完成"
   yellow "提示：请先设置登录密码再启动服务"
@@ -51,30 +46,53 @@ EOF
 
 # 设置登录密码
 set_password() {
-  jupyter server password
-  if [[ $? -eq 0 ]]; then
-    green "✅ 密码设置完成"
-  else
-    red "❌ 密码设置失败"
+  # 直接使用python生成密码散列
+  read -s -p "请输入新密码: " password
+  echo
+  read -s -p "请确认新密码: " password2
+  echo
+  
+  if [[ "$password" != "$password2" ]]; then
+    red "❌ 两次密码不匹配"
+    return_to_menu
+    return
   fi
+
+  # 使用Python生成密码散列
+  hash=$(python3 -c "from notebook.auth import passwd; print(passwd('$password'))")
+  
+  # 更新配置文件
+  sed -i "/c.NotebookApp.password/d" "$jupyter_config_file"
+  echo "c.NotebookApp.password = '$hash'" >> "$jupyter_config_file"
+  
+  green "✅ 密码设置完成"
   return_to_menu
 }
 
 # 显示密码哈希
 show_password() {
-  if [[ -f "$jupyter_password_file" ]]; then
+  if [[ -f "$jupyter_config_file" ]]; then
     echo "密码哈希值："
-    grep "password" "$jupyter_password_file" | cut -d'"' -f4
+    grep "c.NotebookApp.password" "$jupyter_config_file" | cut -d"'" -f2
   else
-    red "❌ 未找到密码文件，请先设置密码"
+    red "❌ 未找到密码配置，请先设置密码"
   fi
   return_to_menu
 }
 
 # 启动 Jupyter Notebook
 start_jupyter() {
-  if [[ ! -f "$jupyter_password_file" ]]; then
-    red "❌ 请先设置登录密码"
+  # 检查是否已安装
+  if ! command -v jupyter &> /dev/null; then
+    red "❌ Jupyter 未安装，请先安装"
+    return_to_menu
+    return
+  fi
+
+  # 检查服务是否已经在运行
+  if pgrep -f "jupyter-notebook" > /dev/null; then
+    yellow "⚠️ Jupyter 已在运行中"
+    ps aux | grep "jupyter-notebook" | grep -v grep
     return_to_menu
     return
   fi
@@ -88,17 +106,27 @@ start_jupyter() {
     return_to_menu
     return
   fi
+
+  # 启动服务
+  cd "$HOME"
+  jupyter notebook --allow-root --no-browser --ip=0.0.0.0 --port=$port > jupyter.log 2>&1 &
   
-  local log_file="$HOME/jupyter.log"
-  nohup jupyter notebook --port=$port > "$log_file" 2>&1 &
-  sleep 2
-  
-  if ! netstat -tuln | grep -q ":$port "; then
-    red "❌ Jupyter 启动失败，请检查日志: $log_file"
-  else
+  # 等待服务启动并检查
+  sleep 3
+  if pgrep -f "jupyter-notebook" > /dev/null; then
     server_ip=$(curl -s ifconfig.me || hostname -I | awk '{print $1}')
+    token=$(grep -oP "token=\K[a-z0-9]+" jupyter.log | head -n 1)
     green "🚀 Jupyter 已启动：端口 $port"
-    yellow "访问地址: http://$server_ip:$port"
+    if [[ -n "$token" ]]; then
+      yellow "访问地址: http://$server_ip:$port/?token=$token"
+      yellow "首次访问请使用上述带token的完整URL"
+    else
+      yellow "访问地址: http://$server_ip:$port"
+    fi
+    yellow "运行日志: $HOME/jupyter.log"
+  else
+    red "❌ Jupyter 启动失败，错误信息："
+    cat jupyter.log
   fi
   return_to_menu
 }
@@ -107,7 +135,14 @@ start_jupyter() {
 stop_jupyter() {
   if pgrep -f "jupyter-notebook" > /dev/null; then
     pkill -f "jupyter-notebook"
-    green "🛑 Jupyter 服务已停止"
+    sleep 2
+    if ! pgrep -f "jupyter-notebook" > /dev/null; then
+      green "🛑 Jupyter 服务已停止"
+    else
+      red "❌ Jupyter 停止失败"
+      yellow "尝试强制停止..."
+      pkill -9 -f "jupyter-notebook"
+    fi
   else
     yellow "Jupyter 未运行"
   fi
@@ -121,6 +156,7 @@ uninstall_jupyter() {
     stop_jupyter
     pip3 uninstall -y jupyter notebook
     rm -rf "$jupyter_config_dir"
+    rm -f "$HOME/jupyter.log"
     green "🗑️ 已卸载 Jupyter 及所有配置"
   else
     yellow "取消操作"
