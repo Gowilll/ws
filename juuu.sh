@@ -43,7 +43,6 @@ EOF
   yellow "提示：请先设置登录密码再启动服务"
   return_to_menu
 }
-
 # 设置登录密码
 set_password() {
   # 检查 Jupyter Notebook 是否安装
@@ -66,15 +65,11 @@ set_password() {
   fi
 
   # 使用Python生成密码散列
-  hash=$(python3 -c "try:
-    from notebook.auth import passwd
-    print(passwd('$password'))
-  except ModuleNotFoundError:
-    print('❌ 未找到 notebook.auth 模块，请确认 Jupyter Notebook 是否安装。')")
+  hash=$(python3 -c "from notebook.auth import passwd; print(passwd('$password'))" 2>/dev/null)
 
   # 检查是否成功生成哈希
-  if [[ "$hash" == "❌"* ]]; then
-    red "$hash"
+  if [[ $? -ne 0 ]]; then
+    red "❌ 未找到 notebook.auth 模块，请确认 Jupyter Notebook 是否安装。"
     return_to_menu
     return
   fi
