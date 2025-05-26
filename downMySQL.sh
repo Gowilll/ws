@@ -40,20 +40,23 @@ else
     echo "跳过 root 密码设置。"
 fi
 
-# 创建新用户并设置密码
-read -p "请输入要创建的新用户名: " dbuser
-read -sp "请输入新用户的密码: " dbpass
-echo
-
-# 询问 root 密码以便后续登录
-if [[ "$rootopt" == "1" || "$rootopt" == "2" ]]; then
-    TMP_ROOT_PASS="$rootpass"
-else
-    read -sp "请输入现有的root密码以完成用户创建: " TMP_ROOT_PASS
+# 询问是否创建新用户
+read -p "是否需要创建新用户？(y/n): " create_user_opt
+if [[ "$create_user_opt" =~ ^[Yy]$ ]]; then
+    read -p "请输入要创建的新用户名: " dbuser
+    read -sp "请输入新用户的密码: " dbpass
     echo
-fi
 
-expect <<EOF
+    # 询问 root 密码以便后续登录
+    if [[ "$rootopt" == "1" || "$rootopt" == "2" ]]; then
+        TMP_ROOT_PASS="$rootpass"
+    else
+        read -sp "请输入现有的root密码以完成用户创建: " TMP_ROOT_PASS
+        echo
+    fi
+
+    sudo apt install -y expect > /dev/null 2>&1
+    expect <<EOF
 spawn mysql -uroot -p
 expect "Enter password:" { send "$TMP_ROOT_PASS\r" }
 expect "mysql>" { send "CREATE USER IF NOT EXISTS '$dbuser'@'localhost' IDENTIFIED BY '$dbpass';\r" }
@@ -62,7 +65,10 @@ expect "mysql>" { send "FLUSH PRIVILEGES;\r" }
 expect "mysql>" { send "exit\r" }
 EOF
 
-echo "新用户 $dbuser 已创建并授权。"
+    echo "新用户 $dbuser 已创建并授权。"
+else
+    echo "跳过新用户创建。"
+fi
 
 echo "====== 完成！ ======"
-echo "MySQL root 用户和新用户已配置完毕。"
+echo "MySQL root 用户和（如有）新用户已配置完毕。"
