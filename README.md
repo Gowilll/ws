@@ -23,7 +23,10 @@ chmod +x [文件名]
 git clone https://github.com/用户名/仓库名.git
 
 例如：
-´´´git clone https://github.com/Gowilll/ws.git´´´
+```
+git clone https://github.com/Gowilll/ws.git
+```
+
 
 
 下载特定分支：
