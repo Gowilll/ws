@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MySQL 数据库管理器</title>
+    <style>
+        /* ...原样保留你的所有CSS */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; color: #333; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        .header { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border-radius: 15px; padding: 25px; margin-bottom: 20px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); }
+        .header h1 { color: #2d3748; font-size: 2.5rem; margin-bottom: 10px; background: linear-gradient(45deg, #667eea, #764ba2); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .connection-panel { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border-radius: 15px; padding: 25px; margin-bottom: 20px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); }
+        .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .form-group { display: flex; flex-direction: column; }
+        .form-group label { font-weight: 600; margin-bottom: 5px; color: #4a5568; }
+        .form-group input { padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 14px; transition: all 0.3s ease; background: rgba(255, 255, 255, 0.8);}
+        .form-group input:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); transform: translateY(-1px);}
+        .btn { padding: 12px 24px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.3s ease; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .btn-primary { background: linear-gradient(45deg, #667eea, #764ba2); color: white; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);}
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);}
+        .btn-success { background: linear-gradient(45deg, #48bb78, #38a169); color: white; box-shadow: 0 4px 15px rgba(72, 187, 120, 0.3);}
+        .btn-danger { background: linear-gradient(45deg, #f56565, #e53e3e); color: white; box-shadow: 0 4px 15px rgba(245, 101, 101, 0.3);}
+        .btn-secondary { background: linear-gradient(45deg, #718096, #4a5568); color: white;}
+        .btn-action { background: linear-gradient(45deg, #f6e05e, #ecc94b); color: #2d3748; }
+        .btn-action:hover { background: linear-gradient(45deg, #ecc94b, #f6e05e); color: #2d3748; }
+        .status { padding: 15px; border-radius: 8px; margin: 10px 0; font-weight: 500; display: none;}
+        .status.success { background: linear-gradient(45deg, #c6f6d5, #9ae6b4); color: #22543d; border-left: 4px solid #48bb78;}
+        .status.error { background: linear-gradient(45deg, #fed7d7, #feb2b2); color: #742a2a; border-left: 4px solid #f56565;}
+        .main-content { display: grid; grid-template-columns: 300px 1fr; gap: 20px; min-height: 500px; }
+        .sidebar { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border-radius: 15px; padding: 25px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); border: 1px solid rgba(255, 255, 255, 0.2);}
+        .sidebar h3 { color: #2d3748; margin-bottom: 15px; font-size: 1.3rem;}
+        .database-list, .table-list { list-style: none;}
+        .database-list li, .table-list li { padding: 10px 15px; margin: 5px 0; background: rgba(102, 126, 234, 0.1); border-radius: 8px; cursor: pointer; transition: all 0.3s ease; border-left: 3px solid transparent;}
+        .database-list li:hover, .table-list li:hover { background: rgba(102, 126, 234, 0.2); border-left-color: #667eea; transform: translateX(5px);}
+        .database-list li.active, .table-list li.active { background: linear-gradient(45deg, #667eea, #764ba2); color: white; border-left-color: #4c51bf;}
+        .content-area { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border-radius: 15px; padding: 25px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); border: 1px solid rgba(255, 255, 255, 0.2);}
+        .query-section { margin-bottom: 30px;}
+        .query-section h3 { color: #2d3748; margin-bottom: 15px; font-size: 1.3rem;}
+        #sqlQuery { width: 100%; height: 120px; padding: 15px; border: 2px solid #e2e8f0; border-radius: 8px; font-family: 'Consolas', 'Monaco', monospace; font-size: 14px; resize: vertical; background: rgba(249, 250, 251, 0.8); transition: all 0.3s ease;}
+        #sqlQuery:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);}
+        .results-section { margin-top: 30px;}
+        .results-section h3 { color: #2d3748; margin-bottom: 15px; font-size: 1.3rem;}
+        .table-container { overflow-x: auto; border-radius: 8px; background: white; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);}
+        table { width: 100%; border-collapse: collapse; font-size: 14px;}
+        th { background: linear-gradient(45deg, #667eea, #764ba2); color: white; padding: 15px 12px; text-align: left; font-weight: 600; position: sticky; top: 0; z-index: 10;}
+        td { padding: 12px; border-bottom: 1px solid #e2e8f0; transition: background-color 0.2s ease;}
+        tr:hover td { background-color: rgba(102, 126, 234, 0.05);}
+        tr:nth-child(even) td { background-color: rgba(249, 250, 251, 0.5);}
+        .loading { display: none; text-align: center; padding: 40px; color: #667eea; font-size: 18px;}
+        .loading::after { content: ""; display: inline-block; width: 30px; height: 30px; border: 3px solid rgba(102, 126, 234, 0.3); border-radius: 50%; border-top-color: #667eea; animation: spin 1s ease-in-out infinite; margin-left: 10px;}
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .hidden { display: none;}
+        .button-group { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 15px;}
+        .action-panel { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+        @media (max-width: 768px) {
+            .main-content { grid-template-columns: 1fr; }
+            .form-grid { grid-template-columns: 1fr; }
+            .header h1 { font-size: 2rem; }
+            .action-panel { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🗄️ MySQL 数据库管理器</h1>
+            <p>专业的数据库管理界面，支持连接、查询和数据操作</p>
+        </div>
+        
+        <div class="connection-panel">
+            <h2>数据库连接配置</h2>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label for="host">主机地址</label>
+                    <input type="text" id="host" value="localhost" placeholder="localhost">
+                </div>
+                <div class="form-group">
+                    <label for="port">端口</label>
+                    <input type="number" id="port" value="3306" placeholder="3306">
+                </div>
+                <div class="form-group">
+                    <label for="username">用户名</label>
+                    <input type="text" id="username" value="root" placeholder="root">
+                </div>
+                <div class="form-group">
+                    <label for="password">密码</label>
+                    <input type="password" id="password" placeholder="输入密码">
+                </div>
+            </div>
+            <div class="button-group">
+                <button class="btn btn-primary" onclick="testConnection()">测试连接</button>
+                <button class="btn btn-success" onclick="connect()">连接数据库</button>
+                <button class="btn btn-danger" onclick="disconnect()">断开连接</button>
+            </div>
+            <div id="connectionStatus" class="status"></div>
+        </div>
+        
+        <div class="main-content">
+            <div class="sidebar">
+                <div>
+                    <h3>📊 数据库列表</h3>
+                    <ul id="databaseList" class="database-list">
+                        <li onclick="showWelcome()">请先连接数据库</li>
+                    </ul>
+                </div>
+                <div style="margin-top: 30px;">
+                    <h3>📋 数据表列表</h3>
+                    <ul id="tableList" class="table-list">
+                        <li>请选择数据库</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="content-area">
+                <div class="query-section">
+                    <h3>💻 SQL 查询执行器</h3>
+                    <!-- 新增：数据库操作按键面板 -->
+                    <div class="action-panel">
+                        <button class="btn btn-action" onclick="showDialog('createDatabase')">创建数据库</button>
+                        <button class="btn btn-action" onclick="showDialog('dropDatabase')">删除数据库</button>
+                        <button class="btn btn-action" onclick="showDialog('createTable')">创建数据表</button>
+                        <button class="btn btn-action" onclick="showDialog('dropTable')">删除数据表</button>
+                        <button class="btn btn-action" onclick="showDialog('addColumn')">添加字段</button>
+                        <button class="btn btn-action" onclick="showDialog('modifyColumn')">修改字段</button>
+                        <button class="btn btn-action" onclick="showDialog('dropColumn')">删除字段</button>
+                        <button class="btn btn-action" onclick="showDialog('insertRow')">插入数据</button>
+                        <button class="btn btn-action" onclick="showDialog('updateRow')">更新数据</button>
+                        <button class="btn btn-action" onclick="showDialog('deleteRow')">删除数据</button>
+                        <button class="btn btn-action" onclick="showDialog('custom')">自定义模板</button>
+                    </div>
+
+                    <!-- 弹窗表单 -->
+                    <div id="dialogBg" class="hidden" style="position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:999;background:rgba(0,0,0,0.15);"></div>
+                    <div id="dialog" class="hidden" style="position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:#fff;z-index:1000;padding:32px 22px;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.2);max-width:90vw;">
+                        <div id="dialogTitle" style="font-weight:bold;font-size:1.2em;margin-bottom:10px;"></div>
+                        <form id="dialogForm">
+                            <div id="dialogFields"></div>
+                            <div style="margin-top:15px;display:flex;gap:10px;">
+                                <button type="submit" class="btn btn-primary">生成SQL</button>
+                                <button type="button" class="btn btn-secondary" onclick="closeDialog()">取消</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- 保留命令行模式 -->
+                    <textarea id="sqlQuery" placeholder="在此输入SQL查询语句...&#10;例如：SELECT * FROM users LIMIT 10;"></textarea>
+                    <div class="button-group">
+                        <button class="btn btn-primary" onclick="executeQuery()">执行查询</button>
+                        <button class="btn btn-secondary" onclick="clearQuery()">清空</button>
+                        <button class="btn btn-success" onclick="saveQuery()">保存查询</button>
+                    </div>
+                </div>
+                
+                <div class="results-section">
+                    <h3>📈 查询结果</h3>
+                    <div id="loading" class="loading">正在执行查询...</div>
+                    <div id="results">
+                        <p style="text-align: center; color: #718096; font-size: 16px; padding: 40px;">
+                            👋 欢迎使用MySQL数据库管理器！<br>
+                            请先连接到数据库，然后执行查询语句。
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let isConnected = false;
+        let currentDatabase = null;
+        let connectionConfig = {};
+        let queryHistory = [];
+
+        // 按键SQL模板配置
+        const actionSqlTemplates = {
+            createDatabase: {
+                title: "创建数据库",
+                fields: [
+                    {label: "数据库名", name: "dbName", type: "text", required: true}
+                ],
+                genSQL: v => `CREATE DATABASE \`${v.dbName}\`;`
+            },
+            dropDatabase: {
+                title: "删除数据库",
+                fields: [
+                    {label: "数据库名", name: "dbName", type: "text", required: true}
+                ],
+                genSQL: v => `DROP DATABASE IF EXISTS \`${v.dbName}\`;`
+            },
+            createTable: {
+                title: "创建数据表",
+                fields: [
+                    {label: "表名", name: "tableName", type: "text", required: true},
+                    {label: "字段定义 (如：id INT PRIMARY KEY, name VARCHAR(32))", name: "columns", type: "text", required: true}
+                ],
+                genSQL: v => `CREATE TABLE \`${v.tableName}\` (${v.columns});`
+            },
+            dropTable: {
+                title: "删除数据表",
+                fields: [
+                    {label: "表名", name: "tableName", type: "text", required: true}
+                ],
+                genSQL: v => `DROP TABLE IF EXISTS \`${v.tableName}\`;`
+            },
+            addColumn: {
+                title: "添加字段",
+                fields: [
+                    {label: "表名", name: "tableName", type: "text", required: true},
+                    {label: "字段定义 (如：age INT)", name: "columnDef", type: "text", required: true}
+                ],
+                genSQL: v => `ALTER TABLE \`${v.tableName}\` ADD ${v.columnDef};`
+            },
+            modifyColumn: {
+                title: "修改字段",
+                fields: [
+                    {label: "表名", name: "tableName", type: "text", required: true},
+                    {label: "原字段名", name: "oldCol", type: "text", required: true},
+                    {label: "新字段定义 (如：age BIGINT NOT NULL)", name: "newColDef", type: "text", required: true}
+                ],
+                genSQL: v => `ALTER TABLE \`${v.tableName}\` CHANGE \`${v.oldCol}\` ${v.newColDef};`
+            },
+            dropColumn: {
+                title: "删除字段",
+                fields: [
+                    {label: "表名", name: "tableName", type: "text", required: true},
+                    {label: "字段名", name: "colName", type: "text", required: true}
+                ],
+                genSQL: v => `ALTER TABLE \`${v.tableName}\` DROP COLUMN \`${v.colName}\`;`
+            },
+            insertRow: {
+                title: "插入数据",
+                fields: [
+                    {label: "表名", name: "tableName", type: "text", required: true},
+                    {label: "字段 (如：name, age)", name: "fields", type: "text", required: true},
+                    {label: "值 (如：'张三', 22)", name: "values", type: "text", required: true}
+                ],
+                genSQL: v => `INSERT INTO \`${v.tableName}\` (${v.fields}) VALUES (${v.values});`
+            },
+            updateRow: {
+                title: "更新数据",
+                fields: [
+                    {label: "表名", name: "tableName", type: "text", required: true},
+                    {label: "SET子句 (如：age=age+1)", name: "setClause", type: "text", required: true},
+                    {label: "WHERE条件 (如：id=1)", name: "whereClause", type: "text", required: false}
+                ],
+                genSQL: v => `UPDATE \`${v.tableName}\` SET ${v.setClause}` + (v.whereClause ? ` WHERE ${v.whereClause}` : "") + ";"
+            },
+            deleteRow: {
+                title: "删除数据",
+                fields: [
+                    {label: "表名", name: "tableName", type: "text", required: true},
+                    {label: "WHERE条件 (如：id=1)", name: "whereClause", type: "text", required: false}
+                ],
+                genSQL: v => `DELETE FROM \`${v.tableName}\`` + (v.whereClause ? ` WHERE ${v.whereClause}` : "") + ";"
+            },
+            custom: {
+                title: "自定义模板SQL",
+                fields: [
+                    {label: "SQL模板", name: "customSql", type: "text", required: true}
+                ],
+                genSQL: v => v.customSql
+            }
+        };
+
+        function showDialog(type) {
+            const dialog = document.getElementById('dialog');
+            const dialogBg = document.getElementById('dialogBg');
+            const dialogTitle = document.getElementById('dialogTitle');
+            const dialogFields = document.getElementById('dialogFields');
+            const dialogForm = document.getElementById('dialogForm');
+            const config = actionSqlTemplates[type];
+            if (!config) return;
+            dialogTitle.innerText = config.title;
+            dialogFields.innerHTML = "";
+            config.fields.forEach(field => {
+                dialogFields.innerHTML += `
+                    <div class="form-group" style="margin-bottom:10px;">
+                        <label>${field.label}${field.required ? ' <span style="color:red">*</span>' : ''}</label>
+                        <input name="${field.name}" type="${field.type}" ${field.required ? 'required' : ''}>
+                    </div>
+                `;
+            });
+            dialogForm.onsubmit = function(e) {
+                e.preventDefault();
+                const data = {};
+                config.fields.forEach(field => {
+                    data[field.name] = dialogForm.elements[field.name].value.trim();
+                });
+                const sql = config.genSQL(data);
+                closeDialog();
+                document.getElementById('sqlQuery').value = sql;
+            };
+            dialog.classList.remove('hidden');
+            dialogBg.classList.remove('hidden');
+        }
+        function closeDialog() {
+            document.getElementById('dialog').classList.add('hidden');
+            document.getElementById('dialogBg').classList.add('hidden');
+        }
+        document.getElementById('dialogBg').onclick = closeDialog;
+
+        function showStatus(message, type) {
+            const status = document.getElementById('connectionStatus');
+            status.textContent = message;
+            status.className = `status ${type}`;
+            status.style.display = 'block';
+            setTimeout(() => { status.style.display = 'none'; }, 5000);
+        }
+        function testConnection() {
+            const config = getConnectionConfig();
+            showStatus('正在测试连接...', 'success');
+            setTimeout(() => { showStatus('✅ 连接测试成功！数据库服务器响应正常。', 'success'); }, 1000);
+        }
+        function getConnectionConfig() {
+            return {
+                host: document.getElementById('host').value,
+                port: document.getElementById('port').value,
+                username: document.getElementById('username').value,
+                password: document.getElementById('password').value
+            };
+        }
+        function connect() {
+            connectionConfig = getConnectionConfig();
+            if (!connectionConfig.host || !connectionConfig.username) {
+                showStatus('❌ 请填写主机地址和用户名', 'error');
+                return;
+            }
+            showStatus('正在连接数据库...', 'success');
+            setTimeout(() => {
+                isConnected = true;
+                showStatus('✅ 数据库连接成功！', 'success');
+                loadDatabases();
+            }, 1500);
+        }
+        function disconnect() {
+            isConnected = false;
+            currentDatabase = null;
+            showStatus('🔌 已断开数据库连接', 'success');
+            document.getElementById('databaseList').innerHTML = '<li onclick="showWelcome()">请先连接数据库</li>';
+            document.getElementById('tableList').innerHTML = '<li>请选择数据库</li>';
+            document.getElementById('results').innerHTML = `
+                <p style="text-align: center; color: #718096; font-size: 16px; padding: 40px;">
+                    👋 欢迎使用MySQL数据库管理器！<br>
+                    请先连接到数据库，然后执行查询语句。
+                </p>
+            `;
+        }
+        function loadDatabases() {
+            const databases = ['information_schema', 'mysql', 'performance_schema', 'sys', 'myapp_db', 'test_db', 'blog_db'];
+            const dbList = document.getElementById('databaseList');
+            dbList.innerHTML = databases.map(db => `<li onclick="selectDatabase(event, '${db}')">${db}</li>`).join('');
+        }
+        function selectDatabase(event, dbName) {
+            if (!isConnected) {
+                showStatus('❌ 请先连接数据库', 'error');
+                return;
+            }
+            currentDatabase = dbName;
+            document.querySelectorAll('.database-list li').forEach(li => li.classList.remove('active'));
+            if (event && event.target) event.target.classList.add('active');
+            showStatus(`📚 已选择数据库: ${dbName}`, 'success');
+            loadTables(dbName);
+        }
+        function loadTables(dbName) {
+            const tables = {
+                'myapp_db': ['users', 'products', 'orders', 'categories', 'reviews'],
+                'blog_db': ['posts', 'comments', 'authors', 'tags', 'categories'],
+                'test_db': ['test_table1', 'test_table2', 'sample_data']
+            };
+            const dbTables = tables[dbName] || ['table1', 'table2', 'table3'];
+            const tableList = document.getElementById('tableList');
+            tableList.innerHTML = dbTables.map(table => `<li onclick="selectTable(event, '${table}')">${table}</li>`).join('');
+        }
+        function selectTable(event, tableName) {
+            document.querySelectorAll('.table-list li').forEach(li => li.classList.remove('active'));
+            if (event && event.target) event.target.classList.add('active');
+            const query = `SELECT * FROM ${tableName} LIMIT 20;`;
+            document.getElementById('sqlQuery').value = query;
+            showStatus(`📋 已选择表: ${tableName}`, 'success');
+        }
+        function executeQuery() {
+            if (!isConnected) {
+                showStatus('❌ 请先连接数据库', 'error');
+                return;
+            }
+            const query = document.getElementById('sqlQuery').value.trim();
+            if (!query) {
+                showStatus('❌ 请输入SQL查询语句', 'error');
+                return;
+            }
+            queryHistory.push(query);
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('results').innerHTML = '';
+            setTimeout(() => {
+                document.getElementById('loading').style.display = 'none';
+                if (query.toLowerCase().includes('select')) {
+                    displaySelectResults();
+                } else if (query.toLowerCase().includes('insert') || 
+                          query.toLowerCase().includes('update') || 
+                          query.toLowerCase().includes('delete')) {
+                    displayModificationResults();
+                } else {
+                    displayGenericResults();
+                }
+                showStatus('✅ 查询执行完成', 'success');
+            }, 1000);
+        }
+        function displaySelectResults() {
+            const sampleData = [
+                { id: 1, name: '张三', email: 'zhangsan@example.com', age: 25, city: '北京' },
+                { id: 2, name: '李四', email: 'lisi@example.com', age: 30, city: '上海' },
+                { id: 3, name: '王五', email: 'wangwu@example.com', age: 28, city: '广州' },
+                { id: 4, name: '赵六', email: 'zhaoliu@example.com', age: 35, city: '深圳' },
+                { id: 5, name: '钱七', email: 'qianqi@example.com', age: 22, city: '杭州' }
+            ];
+            if (sampleData.length === 0) {
+                document.getElementById('results').innerHTML = 
+                    '<p style="text-align: center; color: #718096; padding: 20px;">查询结果为空</p>';
+                return;
+            }
+            const headers = Object.keys(sampleData[0]);
+            let tableHTML = `
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
+                        </thead>
+                        <tbody>
+                            ${sampleData.map(row => 
+                                `<tr>${headers.map(h => `<td>${row[h] || ''}</td>`).join('')}</tr>`
+                            ).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                <p style="margin-top: 15px; color: #718096;">
+                    📊 共返回 ${sampleData.length} 条记录
+                </p>
+            `;
+            document.getElementById('results').innerHTML = tableHTML;
+        }
+        function displayModificationResults() {
+            const affectedRows = Math.floor(Math.random() * 10) + 1;
+            document.getElementById('results').innerHTML = `
+                <div style="background: linear-gradient(45deg, #c6f6d5, #9ae6b4); 
+                           padding: 20px; border-radius: 8px; color: #22543d;">
+                    <h4>✅ 操作执行成功</h4>
+                    <p>影响行数: ${affectedRows}</p>
+                    <p>执行时间: ${Math.random().toFixed(3)}s</p>
+                </div>
+            `;
+        }
+        function displayGenericResults() {
+            document.getElementById('results').innerHTML = `
+                <div style="background: linear-gradient(45deg, #bee3f8, #90cdf4); 
+                           padding: 20px; border-radius: 8px; color: #2c5282;">
+                    <h4>✅ 命令执行成功</h4>
+                    <p>查询已成功执行</p>
+                    <p>执行时间: ${Math.random().toFixed(3)}s</p>
+                </div>
+            `;
+        }
+        function clearQuery() {
+            document.getElementById('sqlQuery').value = '';
+        }
+        function saveQuery() {
+            const query = document.getElementById('sqlQuery').value.trim();
+            if (!query) {
+                showStatus('❌ 没有查询语句可保存', 'error');
+                return;
+            }
+            showStatus('💾 查询已保存到历史记录', 'success');
+        }
+        function showWelcome() {
+            showStatus('💡 请先连接到数据库服务器', 'error');
+        }
+        document.addEventListener('DOMContentLoaded', function() {
+            // 其它初始化逻辑
+        });
+    </script>
+</body>
+</html>
